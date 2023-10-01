@@ -9,7 +9,6 @@ const smartcrop = require('smartcrop-sharp')
 const runes = require('runes')
 const lottie = require('lottie-node')
 const zlib = require('zlib')
-const { Telegram } = require('telegraf')
 
 const emojiDb = new EmojiDbLib({ useDefaultDb: true })
 
@@ -33,13 +32,6 @@ function loadFont () {
 loadFont()
 
 const emojiImageByBrand = require('./emoji-image')
-
-const LRU = require('lru-cache')
-
-const avatarCache = new LRU({
-  max: 20,
-  maxAge: 1000 * 60 * 5
-})
 
 // write a nodejs function that accepts 2 colors. the first is the background color and the second is the text color. as a result, the first color should come out brighter or darker depending on the contrast. for example, if the first text is dark, then make the second brighter and return it. you need to change not the background color, but the text color
 
@@ -109,10 +101,6 @@ class ColorContrast {
 
 
 class QuoteGenerate {
-  constructor (botToken) {
-    this.telegram = new Telegram(botToken)
-  }
-
   async avatarImageLatters (letters, color) {
     const size = 500
     const canvas = createCanvas(size, size)
@@ -156,10 +144,6 @@ class QuoteGenerate {
       else nameLatters = runes(nameWord[0])[0]
     }
 
-    const cacheKey = user.id
-
-    const avatarImageCache = avatarCache.get(cacheKey)
-
     const avatarColorArray = [
       [ '#FF885E', '#FF516A' ], // red
       [ '#FFCD6A', '#FFA85C' ], // orange
@@ -174,31 +158,10 @@ class QuoteGenerate {
 
     const avatarColor = avatarColorArray[nameIndex]
 
-    if (avatarImageCache) {
-      avatarImage = avatarImageCache
-    } else if (user.photo && user.photo.url) {
+    if (user.photo && user.photo.url) {
       avatarImage = await loadImage(user.photo.url)
     } else {
-      try {
-        let userPhoto, userPhotoUrl
-
-        if (user.photo && user.photo.big_file_id) userPhotoUrl = await this.telegram.getFileLink(user.photo.big_file_id).catch(console.error)
-
-        if (!userPhotoUrl) {
-          const getChat = await this.telegram.getChat(user.id).catch(console.error)
-          if (getChat && getChat.photo && getChat.photo.big_file_id) userPhoto = getChat.photo.big_file_id
-
-          if (userPhoto) userPhotoUrl = await this.telegram.getFileLink(userPhoto)
-          else if (user.username) userPhotoUrl = `https://telega.one/i/userpic/320/${user.username}.jpg`
-          else avatarImage = await loadImage(await this.avatarImageLatters(nameLatters, avatarColor))
-        }
-
-        if (userPhotoUrl) avatarImage = await loadImage(userPhotoUrl)
-
-        avatarCache.set(cacheKey, avatarImage)
-      } catch (error) {
-        avatarImage = await loadImage(await this.avatarImageLatters(nameLatters, avatarColor))
-      }
+      avatarImage = await loadImage(await this.avatarImageLatters(nameLatters, avatarColor))
     }
 
     return avatarImage
@@ -214,9 +177,7 @@ class QuoteGenerate {
   }
 
   async downloadMediaImage (media, mediaSize, type = 'id', crop = true) {
-    let mediaUrl
-    if (type === 'id') mediaUrl = await this.telegram.getFileLink(media).catch(console.error)
-    else mediaUrl = media
+    let mediaUrl = media
     const load = await loadImageFromUrl(mediaUrl)
     if (mediaUrl.match(/.tgs/)) {
       const jsonLottie = await this.ungzip(load)
@@ -413,45 +374,6 @@ class QuoteGenerate {
     let lineY = textY
 
     let textWidth = 0
-
-    // load custom emoji
-    const customEmojiIds = []
-
-    for (let index = 0; index < styledWords.length; index++) {
-      const word = styledWords[index]
-
-      if (word.customEmojiId) {
-        customEmojiIds.push(word.customEmojiId)
-      }
-    }
-
-    const getCustomEmojiStickers = await this.telegram.callApi('getCustomEmojiStickers', {
-      custom_emoji_ids: customEmojiIds
-    }).catch(() => {})
-
-    const customEmojiStickers = {}
-
-    const loadCustomEmojiStickerPromises = []
-
-    if (getCustomEmojiStickers) {
-      for (let index = 0; index < getCustomEmojiStickers.length; index++) {
-        const sticker = getCustomEmojiStickers[index]
-
-        loadCustomEmojiStickerPromises.push((async () => {
-          const getFileLink = await this.telegram.getFileLink(sticker.thumb.file_id).catch(() => {})
-
-          if (getFileLink) {
-            const load = await loadImageFromUrl(getFileLink).catch(() => {})
-            const imageSharp = sharp(load)
-            const sharpPng = await imageSharp.png({ lossless: true, force: true }).toBuffer()
-
-            customEmojiStickers[sticker.custom_emoji_id] = await loadImage(sharpPng).catch(() => {})
-          }
-        })())
-      }
-
-      await Promise.all(loadCustomEmojiStickerPromises).catch(() => {})
-    }
 
     let breakWrite = false
     for (let index = 0; index < styledWords.length; index++) {
