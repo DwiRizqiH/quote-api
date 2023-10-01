@@ -30,7 +30,6 @@
     "koa-router": "^7.4.0",
     "lottie-node": "^2.0.0",
     "lottie-web": "^5.7.8",
-    "object-sizeof": "^1.6.0",
     "runes": "^0.4.3",
     "sharp": "^0.31.3",
     "smartcrop-sharp": "^2.0.7"
